@@ -17,22 +17,24 @@ def debugPrint( level, msg, timePrefix=False ):
 debugPrint.printLevel = 2
 
 
-class ShapeElementReference:
+class SketchReference:
+    label = 'SketchReference'
     def __init__(self, object, subelement):
         self.object = object
-        self.description = ShapeElementInfo( subelement, object )
+        self.description = SketchReferenceInfo( subelement, object )
+        self.DescriptionClass = SketchReferenceInfo
 
     def getShapeElementName( self ):
         se_org = self.description
-        se_org_name = se_org.shapeElementName
+        se_org_name = se_org.name
         T = ReversePlacementTransformWithBoundsNormalization( self.object )
         try:
-            se_current = ShapeElementInfo( se_org_name, self.object, T )
+            se_current = self.DescriptionClass( se_org_name, self.object, T )
             if se_org == se_current:
                 return se_org_name
         except (IndexError, ValueError, RuntimeError):
             pass
-        debugPrint(3, 'ShapeElementReference %s.%s has changed. Searching for closest match' % ( self.object.Name, se_org_name) )
+        debugPrint(3, '%s %s.%s has changed. Searching for closest match' % ( self.label, self.object.Name, se_org_name) )
 
         prefixDict = {'Vertexes':'Vertex','Edges':'Edge','Faces':'Face'}
         if se_org_name.startswith('Vertex'):
@@ -50,9 +52,119 @@ class ShapeElementReference:
                 FreeCAD.Console.PrintError('failure to classify %s.%s\n' % ( self.object.Name, se_name ) )
                 continue
             if se_category == se_org.category:
-                se_errors.append( ShapeElementInfo( se_name, self.object, T) - se_org )
+                se_errors.append( self.DescriptionClass( se_name, self.object, T) - se_org )
+        if debugPrint.printLevel >= 4:
+            for e in se_errors:
+                debugPrint(4, '    %s' % str(e))
         min_error = min( se_errors )
-        return min_error.se1.shapeElementName
+        return min_error.se1.name
+
+class SketchReferenceInfo:
+    def __init__(self, elementName, obj, T=None):
+        self.name = elementName
+        if T == None:
+            T =  ReversePlacementTransformWithBoundsNormalization( obj )
+        self.category = classifyShapeElement( obj, elementName )
+        #if self.category in ['cylindricalSurface','circularEdge','plane','linearEdge']:
+        #    self.axis_T = T.unRotate( getElementAxis( obj, shapeElementName ) ) #not important for Sketch References
+        self.pos_T = T( getElementPos( obj, elementName ) )
+        if not elementName.startswith('Vertex'):
+            ind = int( elementName[4:] ) -1 
+            element = obj.Shape.Faces[ind]  if elementName.startswith('Face') else obj.Shape.Edges[ind]
+            self.vertex_P =  numpy.array( [ T(v.Point) for v in element.Vertexes ] )
+
+    def _vertexesDifference( self, b):
+        sqr_dist = 0
+        for i in range( self.vertex_P.shape[0] ): #no. of rows
+            i_array = numpy.repeat( self.vertex_P[i:i+1], b.vertex_P.shape[0], axis=0 )
+            sqr_diff = (b.vertex_P - i_array) ** 2
+            sqr_dist = sqr_dist + min( sqr_diff.sum(axis=1) )
+        return sqr_dist
+
+    def cmpErrors( self, b):
+        if self.category in ['circularEdge','cylindricalSurface']:
+            error1 = norm( self.pos_T - b.pos_T )
+            error2 = self._vertexesDifference( b )
+        elif self.category in ['plane', 'linearEdge']:
+            error1 = 0
+            error2 = self._vertexesDifference( b )
+        elif self.category == 'vertex':
+            error1 = 0
+            error2 = norm( self.pos_T - b.pos_T )
+        else:
+            raise NotImplementedError, "logic not programmed for category %s" % self.category
+        return error1, error2
+
+    def __eq__( self, b, tol=10**-9 ):
+        if self.category == b.category:
+            error1, error2 = self.cmpErrors( b ) 
+            return error1 < tol and error2 < tol
+        else:
+            return False
+
+    def __sub__(self, b):
+        return ShapeElement_Absolute_Difference( self, b )
+
+
+class ShapeElement_Absolute_Difference:
+    def __init__(self, shapeElement1, shapeElement2):
+        self.se1 = shapeElement1
+        self.se2 =  shapeElement2
+        self.error1, self.error2 = shapeElement1.cmpErrors( shapeElement2 )
+    def __lt__( self, b, tol=10**-9):
+        if abs(self.error1 - b.error1) > tol:
+            return self.error1 < b.error1
+        else:
+            return self.error2 < b.error2
+    def __str__( self ):
+        return '<diff %s-%s, errors  %1.2e  %1.2e>' % ( self.se1.name, self.se2.name, self.error1, self.error2 )
+
+
+class SketchSupportReference(SketchReference):
+    label = 'SketchSupportReference'
+    def __init__(self, sketch):
+        object, elementName = sketch.Support[0], sketch.Support[1][0]
+        self.object = object
+        self.DescriptionClass = SketchSupportReferenceInfo
+        try:
+            self.description = SketchSupportReferenceInfo( elementName , object )
+        except IndexError: #not existent support ...
+            self.description = SketchSupportReferenceInfo_nonExistentSupport( obj, sketch)
+
+
+class SketchSupportReferenceInfo(SketchReferenceInfo):
+    def __init__(self, elementName, obj, T=None):
+        self.name = elementName
+        if T == None:
+            T =  ReversePlacementTransformWithBoundsNormalization( obj )
+        self.category = classifyShapeElement( obj, elementName )
+        self.axis_T = T.unRotate( getElementAxis( obj, elementName ) ) #not important for Sketch References
+        self.pos_T = T( getElementPos( obj, elementName ) )
+    def cmpErrors( self, b):
+        error1 = 1 - abs( dot( self.axis_T, b.axis_T ) )
+        error2 = norm( self.pos_T - b.pos_T )
+        return error1, error2
+
+class SketchSupportReferenceInfo_nonExistentSupport(SketchSupportReferenceInfo):
+    def __init__(self, obj, sketch ):
+        self.name = 'Face_Unparasable_Sketch_Support'
+        T =  ReversePlacementTransformWithBoundsNormalization( obj )
+        self.category = 'plane'
+        self.axis_T = T.unRotate( sketch.Shape.Placement.Rotation.Axis ) 
+        self.pos_T = T( sketch.Shape.Placement.Base )
+
+class DirectionReference(SketchReference):
+    label = 'DirectionReference'
+    def __init__(self, object, elementName):
+        self.object = object
+        self.DescriptionClass = DirectionReferenceInfo
+        self.description = self.DescriptionClass( elementName , object )
+
+class DirectionReferenceInfo(SketchSupportReferenceInfo):
+    def cmpErrors( self, b):
+        error1 = 1 - dot( self.axis_T, b.axis_T )
+        error2 = norm( self.pos_T - b.pos_T )
+        return error1, error2
 
 
 def classifyShapeElement( obj, shapeElementName ):
@@ -90,72 +202,6 @@ def classifyShapeElement( obj, shapeElementName ):
     raise RuntimeError, "unable to classify subelement %s.%s" % (obj.Name, shapeElementName)
 
 
-vertex_instead_of_pos_cmp = False
-
-class ShapeElementInfo:
-    def __init__(self, shapeElementName, obj, T=None):
-        self.shapeElementName = shapeElementName
-        if T == None:
-            T =  ReversePlacementTransformWithBoundsNormalization( obj )
-        self.category = classifyShapeElement( obj, shapeElementName )
-        if self.category in ['cylindricalSurface','circularEdge','plane','linearEdge']:
-            self.axis_T = T.unRotate( getElementAxis( obj, shapeElementName ) )
-        self.pos_T = T( getElementPos( obj, shapeElementName ) )
-        if vertex_instead_of_pos_cmp:
-            if shapeElementName.startswith('Vertex'):
-                self.vertex_P = numpy.array( [T( getElementPos( obj, shapeElementName ) )] )
-            else:
-                ind = int( shapeElementName[4:] ) -1 
-                element = obj.Shape.Faces[ind]  if  shapeElementName.startswith('Face') else obj.Shape.Edges[ind]
-                self.vertex_P =  numpy.array( [ T(v.Point) for v in element.Vertexes ] )                                             
-    def cmpErrors( self, b):
-        if hasattr( self, 'axis_T'):
-            error1 = 1 -  dot( self.axis_T, b.axis_T ) 
-        else:
-            error1 = 0
-        if hasattr( self, 'vertex_P') and hasattr(b, 'vertex_P') :
-            sqr_dist = 0
-            for i in range( self.vertex_P.shape[0] ): #no. of rows
-                i_array = numpy.repeat( self.vertex_P[i:i+1], b.vertex_P.shape[0], axis=0 )
-                sqr_diff = (b.vertex_P - i_array) ** 2
-                sqr_dist = sqr_dist + min( sqr_diff.sum(axis=1) )
-            error2 = sqr_dist
-        else:
-            error2 = norm( self.pos_T - b.pos_T )
-        return error1, error2
-    def __eq__( self, b ):
-        if self.category == b.category:
-            error1, error2 = self.cmpErrors( b ) 
-            return error1 == 0 and error2 == 0
-        else:
-            return False
-    def __sub__(self, b):
-        return ShapeElementInfo_Absolute_Difference( self, b )
-
-class ShapeElementReference_Sketch_Support(ShapeElementReference):
-    def __init__(self, object, sketch):
-        self.object = object
-        self.description = ShapeElementInfo_Sketch_Support( object, sketch )
-
-class ShapeElementInfo_Sketch_Support(ShapeElementInfo):
-    def __init__(self, obj, sketch ):
-        self.shapeElementName = 'Face_Unparasable_Sketch_Support'
-        T =  ReversePlacementTransformWithBoundsNormalization( obj )
-        self.category = 'plane'
-        self.axis_T = T.unRotate( sketch.Shape.Placement.Rotation.Axis ) 
-        self.pos_T = T( sketch.Shape.Placement.Base )
-
-
-class ShapeElementInfo_Absolute_Difference:
-    def __init__(self, se1, se2):
-        self.se1 = se1
-        self.se2 = se2 
-        self.error1, self.error2 = se1.cmpErrors( se2 )
-    def __lt__( self, b):
-        if self.error1 <> b.error1:
-            return self.error1 < b.error1
-        else:
-            return self.error2 < b.error2
 
 
 #assembly2lib

@@ -26,11 +26,11 @@ for obj_name, exGeom, supportGeom in reference_state:
     progressDialog.setValue( progress_ind )
     progress_ind = progress_ind + 1
 
+    debugPrint(3,'  checking %s' % obj_name)
     obj = FreeCAD.ActiveDocument.getObject( obj_name )
     if obj.TypeId == 'Sketcher::SketchObject':
         sketch_name = obj_name
         sketch = obj
-        debugPrint(3,'  checking %s' % sketch_name)
         sketch = FreeCAD.ActiveDocument.getObject( sketch_name )
         assert sketch != None
         changed = False
@@ -38,7 +38,7 @@ for obj_name, exGeom, supportGeom in reference_state:
         newExtGeom = []
         for g in exGeom:
             se_name = g.getShapeElementName()
-            old_name = g.description.shapeElementName
+            old_name = g.description.name
             if se_name != old_name:
                 changed = True
                 debugPrint( 2,'  %s.ExternalGeometry:  %s -> %s' % (sketch_name, old_name, se_name) )
@@ -49,7 +49,7 @@ for obj_name, exGeom, supportGeom in reference_state:
 
         if supportGeom != None:
             se_name = supportGeom.getShapeElementName()
-            old_name = supportGeom.description.shapeElementName
+            old_name = supportGeom.description.name
             if se_name != old_name:
                 changed = True
                 debugPrint( 2,'  %s.Support:  %s -> %s' % (sketch_name, old_name, se_name) )
@@ -66,7 +66,7 @@ for obj_name, exGeom, supportGeom in reference_state:
 
     elif obj.TypeId == 'PartDesign::LinearPattern':
         se_name = supportGeom.getShapeElementName()
-        old_name = supportGeom.description.shapeElementName
+        old_name = supportGeom.description.name
         if se_name != old_name:
             debugPrint( 2,'  %s.Direction:  %s -> %s' % (obj_name, old_name, se_name) )
             obj.Direction = ( supportGeom.object, [se_name] )

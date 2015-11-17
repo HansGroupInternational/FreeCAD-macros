@@ -10,16 +10,13 @@ for obj in FreeCAD.ActiveDocument.Objects:
             debugPrint(3, 'parsing ShapeElementReferences from %s' % obj.Name )
             exGeom = []
             for se_obj,se in obj.ExternalGeometry:
-                try:
-                    exGeom.append( ShapeElementReference(se_obj, se) )
-                except RuntimeError, msg:
-                    FreeCAD.Console.PrintError('unable to record %s.%s (%s), reference will be removed on update!\n' % ( se_obj.Name, se, str(msg) ) )
+                #try:
+                exGeom.append( SketchReference(se_obj, se) )
+                #except RuntimeError, msg:
+                #    FreeCAD.Console.PrintError('unable to record %s.%s (%s), reference will be removed on update!\n' % ( se_obj.Name, se, str(msg) ) )
             if obj.Support != None:
                 assert len( obj.Support[1] ) == 1
-                try:
-                    supportGeom = ShapeElementReference( obj.Support[0], obj.Support[1][0])
-                except IndexError: #it has occured that the supporting shape element reference is broken, in which case
-                    supportGeom = ShapeElementReference_Sketch_Support( obj.Support[0], obj )
+                supportGeom = SketchSupportReference( obj )
             else:
                 supportGeom = None
             reference_state.append( [ obj.Name, exGeom, supportGeom ] )
@@ -27,7 +24,7 @@ for obj in FreeCAD.ActiveDocument.Objects:
         refObj, refElements = obj.Direction
         if not refObj.TypeId == 'Sketcher::SketchObject' and len(refElements) == 1:
             debugPrint(3, 'parsing ShapeElementReferences from %s' % obj.Name )
-            supportGeom = ShapeElementReference( refObj, refElements[0])
-            reference_state.append( [ obj.Name, None, supportGeom ] )
+            directionRef = DirectionReference( refObj, refElements[0] )
+            reference_state.append( [ obj.Name, None, directionRef ] )
 lib_repair_sketch_references_partDesign.reference_state = reference_state
 debugPrint( 1, 'Sketch references recorded', timePrefix=True )
