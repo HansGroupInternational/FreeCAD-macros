@@ -26,5 +26,11 @@ for obj in FreeCAD.ActiveDocument.Objects:
             debugPrint(3, 'parsing ShapeElementReferences from %s' % obj.Name )
             directionRef = DirectionReference( refObj, refElements[0] )
             reference_state.append( [ obj.Name, None, directionRef ] )
+    elif  obj.TypeId in ['PartDesign::Fillet', 'PartDesign::Chamfer']:
+        refObj, refElements = obj.Base
+        debugPrint(3, 'parsing ShapeElementReferences from %s' % obj.Name )
+        edgeReferences = [ EdgeReference( refObj, r) for r in refElements ]
+        reference_state.append( [ obj.Name, edgeReferences, None ] )
+
 lib_repair_sketch_references_partDesign.reference_state = reference_state
 debugPrint( 1, 'Sketch references recorded', timePrefix=True )

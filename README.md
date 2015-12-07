@@ -11,6 +11,7 @@ Only supports the repair of the following features
 
 * sketches:  geometry and support references
 * linearPattern: direction reference
+* fillet and chamfer edge references
 
 
 Requires the pyside and numpy python libraries.

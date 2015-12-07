@@ -14,7 +14,7 @@ def debugPrint( level, msg, timePrefix=False ):
     if level <= debugPrint.printLevel:
         tPrefix = '' if not timePrefix else datetime.datetime.now().strftime('%H:%M:%S ')
         FreeCAD.Console.PrintMessage( '%s%s\n' % (tPrefix,msg))
-debugPrint.printLevel = 2
+debugPrint.printLevel = 3
 
 
 class SketchReference:
@@ -164,6 +164,29 @@ class DirectionReferenceInfo(SketchSupportReferenceInfo):
     def cmpErrors( self, b):
         error1 = 1 - dot( self.axis_T, b.axis_T )
         error2 = norm( self.pos_T - b.pos_T )
+        return error1, error2
+
+class EdgeReference(SketchReference):
+    label = 'EdgeReference'
+    def __init__(self, object, elementName):
+        self.object = object
+        self.DescriptionClass = EdgeReferenceInfo
+        self.description = self.DescriptionClass( elementName , object )
+
+class EdgeReferenceInfo(SketchSupportReferenceInfo):
+    def __init__(self, elementName, obj, T=None):
+        self.name = elementName
+        if T == None:
+            T =  ReversePlacementTransformWithBoundsNormalization( obj )
+        self.category = classifyShapeElement( obj, elementName )
+        self.axis_T = T.unRotate( getElementAxis( obj, elementName ) )
+        self.pos_T = T( getElementPos( obj, elementName ) )
+        ind = int( elementName[4:] ) -1 
+        element = obj.Shape.Faces[ind]  if elementName.startswith('Face') else obj.Shape.Edges[ind]
+        self.vertex_P =  numpy.array( [ T(v.Point) for v in element.Vertexes ] )
+    def cmpErrors( self, b):
+        error1 = 1 - abs(dot( self.axis_T, b.axis_T ))
+        error2 = self._vertexesDifference( b )
         return error1, error2
 
 

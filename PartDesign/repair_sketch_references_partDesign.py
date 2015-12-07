@@ -73,6 +73,23 @@ for obj_name, exGeom, supportGeom in reference_state:
             obj.touch()
             FreeCAD.ActiveDocument.recompute()
 
+    elif obj.TypeId in ['PartDesign::Fillet', 'PartDesign::Chamfer']:
+        changed = False
+        newExtGeom = []
+        for g in exGeom:
+            se_name = g.getShapeElementName()
+            old_name = g.description.name
+            if se_name != old_name:
+                changed = True
+                refObj = g.object
+                debugPrint( 2,'  %s.EdgeReference:  %s -> %s' % (sketch_name, old_name, se_name) )
+            newExtGeom.append( se_name )
+        if changed:
+            obj.Base = ( refObj , newExtGeom )
+            obj.touch()
+            FreeCAD.ActiveDocument.recompute()
+
+
 if not progressDialog.wasCanceled():
     progressDialog.setValue( progress_ind )
     debugPrint(1,'repair_sketch_references completed',timePrefix=True)
